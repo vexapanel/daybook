@@ -1,6 +1,6 @@
-# Daybook
+# Cihan Not Ajanı
 
-Voice work journal and income/expense log for the phone. Static PWA, no backend; speech-to-text and text cleanup run on Groq with your own API key.
+Turkish voice work journal and income/expense log for the phone. Static PWA, no backend; speech-to-text and text cleanup run on Groq with your own API key.
 
 ## Run locally
 ```

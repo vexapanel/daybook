@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-11-03 — Turkish UI, auto-stop, "Cihan Not Ajanı" theme
+- **What:** App renamed to "Cihan Not Ajanı" (repo/URL stay `daybook`; storage keys unchanged so existing data is kept). UI text is Turkish at the user's explicit request (overrides the English-UI default). Black/yellow/white theme in all system themes; new icons. Recording now stops by itself after 3.5 s of silence (adjustable in Settings), or after 10 s with no speech at all (discarded, nothing sent). Voice detection is energy-based with an adaptive noise floor (`toggleMic` in `app.js`).
+- **Why:** User wants hands-free notes without tapping stop, but no cut-off during thinking pauses.
+- **State:** Verified in headless Chrome with a WAV fed as the microphone: quiet and noisy (~0.03 RMS background) recordings both stop ~3.5 s after speech ends and do not stop on a 2.5 s mid-sentence pause; silence stops at 10 s with "Ses algılanmadı."; a browser-recorded webm went through real Groq Whisper + LLM and was saved. Not yet tested on a real phone mic or with real Turkish speech.
+
 ## 2026-11-03 — GitHub Pages + key setup link
 - **What:** Published to https://vexapanel.github.io/daybook/ (repo `vexapanel/daybook`, Pages serves `main` branch root; every push redeploys). Added a one-time setup link: `index.html#key=gsk_…` saves the Groq key and wipes it from the address bar. Default model is now `openai/gpt-oss-120b` (`llama-3.3-70b-versatile` is not available on this Groq account). Transcripts drop Whisper's "Altyazı M.K." silence hallucination. Journal cleanup keeps the speaker's person/tense ("yaptık" no longer becomes "yaptım").
 - **Why:** The key must not live on the public site or repo (it would be scraped and abused); a QR code with the key in the URL fragment sets up the phone with no typing, and fragments are never sent to the server.

@@ -5,6 +5,9 @@ const STT_MODEL = 'whisper-large-v3-turbo';
 const DEFAULT_MODEL = 'openai/gpt-oss-120b';
 const LANG = 'tr'; // spoken language; fixing it improves Whisper accuracy over auto-detect
 const MIN_RECORDING_MS = 1000; // Whisper hallucinates text on near-silent clips
+const DEFAULT_SILENCE_S = 3.5; // long enough for a thinking pause mid-sentence, short enough not to feel stuck
+const NO_SPEECH_MS = 10000; // give up if nothing is said at all
+const MIN_VOICE_RMS = 0.015; // below this is never treated as speech, even in a silent room
 
 const JOURNAL_PROMPT = `You turn a spoken work-diary voice note into a clean written diary entry.
 The input is a raw speech transcript, usually Turkish, full of filler words, repetitions and transcription errors.
@@ -22,7 +25,7 @@ Reply only with JSON: {"items": [{"type": "in" | "out", "amount": <number>, "des
 - Skip anything without an amount. If nothing is found reply {"items": []}.`;
 
 const $ = s => document.querySelector(s);
-const money = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'TRY' });
+const money = new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' });
 
 const db = load();
 let day = iso(new Date());
@@ -45,7 +48,7 @@ function save() {
   try {
     localStorage.setItem('daybook', JSON.stringify(db));
   } catch (e) {
-    status('Could not save: ' + e.message, true);
+    status('Kaydedilemedi: ' + e.message, true);
   }
 }
 
@@ -66,8 +69,8 @@ function el(tag, cls, text) {
 
 function delButton(onDelete) {
   const b = el('button', 'del', '×');
-  b.setAttribute('aria-label', 'Delete');
-  b.onclick = () => confirm('Delete this entry?') && onDelete();
+  b.setAttribute('aria-label', 'Sil');
+  b.onclick = () => confirm('Bu kayıt silinsin mi?') && onDelete();
   return b;
 }
 
@@ -86,7 +89,7 @@ function setBusy(busy) {
 function render() {
   const date = new Date(day + 'T12:00');
   $('#date').value = day;
-  $('#dateLabel').textContent = date.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  $('#dateLabel').textContent = date.toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   document.body.dataset.tab = tab;
   for (const b of document.querySelectorAll('[data-tab-btn]')) b.setAttribute('aria-selected', b.dataset.tabBtn === tab);
 
@@ -104,8 +107,8 @@ function render() {
   $('#dayNet').textContent = money.format(d.in - d.out);
 
   const m = totals(db.tx.filter(t => t.date.startsWith(day.slice(0, 7))));
-  const monthName = date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-  $('#month').textContent = `${monthName}: in ${money.format(m.in)} · out ${money.format(m.out)} · net ${money.format(m.in - m.out)}`;
+  const monthName = date.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
+  $('#month').textContent = `${monthName}: gelen ${money.format(m.in)} · giden ${money.format(m.out)} · kalan ${money.format(m.in - m.out)}`;
 }
 
 function noteItem(n) {
@@ -148,12 +151,17 @@ function remove(kind, id) {
 
 async function groq(path, body, json) {
   const key = localStorage.getItem('daybook.key');
-  if (!key) throw new Error('Add your Groq API key in Settings (gear icon).');
+  if (!key) throw new Error('Önce Ayarlar\'dan (dişli simgesi) Groq API anahtarını ekle.');
   const headers = { Authorization: 'Bearer ' + key };
   if (json) headers['Content-Type'] = 'application/json';
-  const res = await fetch(API + path, { method: 'POST', headers, body: json ? JSON.stringify(body) : body });
+  let res;
+  try {
+    res = await fetch(API + path, { method: 'POST', headers, body: json ? JSON.stringify(body) : body });
+  } catch {
+    throw new Error('İnternete bağlanılamadı.');
+  }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error?.message || 'Groq error ' + res.status);
+  if (!res.ok) throw new Error(data.error?.message || 'Groq hatası ' + res.status);
   return data;
 }
 
@@ -194,7 +202,7 @@ async function handle(text) {
   const date = day;
   const time = new Date().toTimeString().slice(0, 5);
   if (tab === 'journal') {
-    status('Writing it up…');
+    status('Düzenleniyor…');
     let clean = text;
     let error = null;
     try {
@@ -205,16 +213,16 @@ async function handle(text) {
     db.notes.push({ id: uid(), date, time, text: clean, raw: text });
     save();
     render();
-    if (error) status('Saved unedited: ' + error.message, true);
-    else status('Note saved.');
+    if (error) status('Düzenlenmeden kaydedildi: ' + error.message, true);
+    else status('Not kaydedildi.');
   } else {
-    status('Reading amounts…');
+    status('Tutarlar okunuyor…');
     const items = normalizeItems((await ask(MONEY_PROMPT, text)).items);
-    if (!items.length) throw new Error('No amount found. Say e.g. "spent 250 on lunch".');
+    if (!items.length) throw new Error('Tutar bulunamadı. Örneğin "öğlen yemeğe 250 verdim" de.');
     for (const i of items) db.tx.push({ id: uid(), date, time, ...i, note: text });
     save();
     render();
-    status(`Added ${items.length} entr${items.length === 1 ? 'y' : 'ies'}.`);
+    status(`${items.length} kayıt eklendi.`);
   }
 }
 
@@ -235,7 +243,7 @@ async function submitText(text) {
 
 async function submitAudio(blob) {
   setBusy(true);
-  status('Transcribing…');
+  status('Yazıya dökülüyor…');
   let text;
   try {
     text = await transcribe(blob);
@@ -243,42 +251,70 @@ async function submitAudio(blob) {
   } catch (e) {
     pendingAudio = blob;
     setBusy(false);
-    return status('Transcription failed: ' + e.message, true, true);
+    return status('Yazıya dökülemedi: ' + e.message, true, true);
   }
   setBusy(false);
-  if (!text) return status('Heard nothing. Try again closer to the mic.', true);
+  if (!text) return status('Bir şey anlaşılmadı. Mikrofona daha yakın konuş.', true);
   await submitText(text);
 }
 
+function stopRecorder(r) {
+  if (r.state === 'recording') r.stop();
+}
+
 async function toggleMic() {
-  if (recorder) return recorder.stop();
+  if (recorder) return stopRecorder(recorder);
+  const ctx = new AudioContext(); // created before any await so iOS still counts the tap as the user gesture
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch {
-    return status('Microphone access denied. Allow it in the browser settings.', true);
+    ctx.close();
+    return status('Mikrofon izni verilmedi. Tarayıcı ayarlarından izin ver.', true);
   }
+  ctx.resume();
+  const analyser = ctx.createAnalyser();
+  ctx.createMediaStreamSource(stream).connect(analyser);
+  const samples = new Float32Array(analyser.fftSize);
+  const silenceMs = (Number(localStorage.getItem('daybook.silence')) || DEFAULT_SILENCE_S) * 1000;
   const chunks = [];
   const started = Date.now();
+  let lastVoice = started;
+  let spoke = false;
+  let floor = 1;
   const r = new MediaRecorder(stream);
   r.ondataavailable = e => e.data.size && chunks.push(e.data);
   r.onstop = () => {
     stream.getTracks().forEach(t => t.stop());
+    ctx.close();
     clearInterval(timer);
     recorder = null;
     $('#mic').classList.remove('rec');
-    if (Date.now() - started < MIN_RECORDING_MS) return status('Too short. Tap, speak, then tap again.', true);
+    if (!spoke) return status('Ses algılanmadı.', true);
+    if (Date.now() - started < MIN_RECORDING_MS) return status('Çok kısa. Dokun ve konuş, susunca kendisi durur.', true);
     submitAudio(new Blob(chunks, { type: r.mimeType }));
   };
   r.start();
   recorder = r;
   $('#mic').classList.add('rec');
   const tick = () => {
-    const s = Math.floor((Date.now() - started) / 1000);
-    status(`Listening… ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} — tap to stop`);
+    analyser.getFloatTimeDomainData(samples);
+    const rms = Math.sqrt(samples.reduce((s, v) => s + v * v, 0) / samples.length);
+    // The noise floor drops at once and rises slowly: steady workshop noise is learned within
+    // seconds, while the short gaps between words keep it low during speech.
+    // ponytail: energy-based voice detection, swap for a VAD model if loud machines keep it recording.
+    floor = rms < floor ? rms : floor + (rms - floor) * 0.01;
+    const now = Date.now();
+    if (rms > Math.max(floor * 3, MIN_VOICE_RMS)) {
+      lastVoice = now;
+      spoke = true;
+    }
+    if (now - lastVoice > (spoke ? silenceMs : NO_SPEECH_MS)) return stopRecorder(r);
+    const s = Math.floor((now - started) / 1000);
+    status(`Dinliyorum… ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} · susunca kendisi durur`);
   };
   tick();
-  timer = setInterval(tick, 500);
+  timer = setInterval(tick, 100);
 }
 
 // ---------- backup ----------
@@ -286,7 +322,7 @@ async function toggleMic() {
 function exportBackup() {
   const a = el('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' }));
-  a.download = `daybook-${iso(new Date())}.json`;
+  a.download = `cihan-not-yedek-${iso(new Date())}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
@@ -294,7 +330,7 @@ function exportBackup() {
 async function importBackup(file) {
   try {
     const d = JSON.parse(await file.text());
-    if (!Array.isArray(d.notes) || !Array.isArray(d.tx)) throw new Error('not a Daybook backup');
+    if (!Array.isArray(d.notes) || !Array.isArray(d.tx)) throw new Error('bu dosya Cihan Not Ajanı yedeği değil');
     const merge = (mine, theirs) => {
       const ids = new Set(mine.map(x => x.id));
       let added = 0;
@@ -304,9 +340,9 @@ async function importBackup(file) {
     const added = merge(db.notes, d.notes) + merge(db.tx, d.tx);
     save();
     render();
-    status(`Imported ${added} new entries.`);
+    status(`${added} yeni kayıt yüklendi.`);
   } catch (e) {
-    status('Import failed: ' + e.message, true);
+    status('Yüklenemedi: ' + e.message, true);
   }
 }
 
@@ -340,17 +376,19 @@ $('#openSettings').onclick = () => {
   $('#key').value = localStorage.getItem('daybook.key') || '';
   $('#model').value = localStorage.getItem('daybook.model') || '';
   $('#model').placeholder = DEFAULT_MODEL;
+  $('#silence').value = localStorage.getItem('daybook.silence') || '';
+  $('#silence').placeholder = DEFAULT_SILENCE_S;
   dlg.showModal();
 };
 $('#cancel').onclick = () => dlg.close();
 dlg.onclose = () => {
   if (dlg.returnValue !== 'save') return;
   dlg.returnValue = '';
-  for (const k of ['key', 'model']) {
+  for (const k of ['key', 'model', 'silence']) {
     const v = $('#' + k).value.trim();
     v ? localStorage.setItem('daybook.' + k, v) : localStorage.removeItem('daybook.' + k);
   }
-  status('Settings saved.');
+  status('Ayarlar kaydedildi.');
 };
 $('#export').onclick = exportBackup;
 $('#import').onclick = () => $('#importFile').click();
@@ -367,8 +405,8 @@ if (linkKey) {
 navigator.storage?.persist?.();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 render();
-if (!localStorage.getItem('daybook.key')) status('First, add your Groq API key in Settings (gear icon).');
-else if (linkKey) status('Groq key saved. Now add this page to your home screen.');
+if (!localStorage.getItem('daybook.key')) status('Önce Ayarlar\'dan (dişli simgesi) Groq API anahtarını ekle.');
+else if (linkKey) status('Groq anahtarı kaydedildi. Şimdi bu sayfayı ana ekrana ekle.');
 
 if (location.hash === '#selftest') {
   const items = normalizeItems([
