@@ -8,7 +8,8 @@ const MIN_RECORDING_MS = 1000; // Whisper hallucinates text on near-silent clips
 
 const JOURNAL_PROMPT = `You turn a spoken work-diary voice note into a clean written diary entry.
 The input is a raw speech transcript, usually Turkish, full of filler words, repetitions and transcription errors.
-Rewrite it in the SAME language as clear, well-punctuated, first-person, past-tense sentences.
+Rewrite it in the SAME language as clear, well-punctuated sentences.
+Keep the speaker's own person and tense: "yaptık" stays "yaptık", never "yaptım".
 Remove fillers (e.g. "ııı", "şey", "yani", "anladın mı", "falan filan") and fix obvious transcription mistakes.
 Keep every fact, time, number and detail. Do not add, guess, summarize away or comment on anything.
 Reply only with JSON: {"text": "<entry>"}`;
