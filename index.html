@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Daybook</title>
+  <meta name="theme-color" content="#0f1115">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-tab="journal">
+  <header>
+    <div class="datebar">
+      <button class="icon" id="prev" aria-label="Previous day">
+        <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <label class="date">
+        <span id="dateLabel"></span>
+        <input type="date" id="date" aria-label="Pick a date">
+      </label>
+      <button class="icon" id="next" aria-label="Next day">
+        <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
+      <button class="icon" id="openSettings" aria-label="Settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+    </div>
+    <div class="tabs" role="tablist">
+      <button role="tab" data-tab-btn="journal">Journal</button>
+      <button role="tab" data-tab-btn="money">Money</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="journal">
+      <ul id="notes" class="list"></ul>
+      <p class="empty" id="notesEmpty">No notes for this day. Tap the mic and tell what you did.</p>
+    </section>
+
+    <section id="money">
+      <div class="stats">
+        <div class="stat in"><small>In</small><b id="dayIn"></b></div>
+        <div class="stat out"><small>Out</small><b id="dayOut"></b></div>
+        <div class="stat"><small>Net</small><b id="dayNet"></b></div>
+      </div>
+      <p class="month" id="month"></p>
+      <ul id="txs" class="list"></ul>
+      <p class="empty" id="txEmpty">No entries for this day. Say e.g. "spent 250 on lunch, got 2000 advance".</p>
+    </section>
+  </main>
+
+  <footer>
+    <p id="status" role="status"><span id="statusText"></span> <button id="retry" hidden>Retry</button></p>
+    <form id="bar">
+      <input id="text" autocomplete="off" placeholder="Type instead…" aria-label="Type a note">
+      <button class="icon" id="send" aria-label="Send">
+        <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </button>
+      <button type="button" id="mic" aria-label="Record voice note">
+        <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+      </button>
+    </form>
+  </footer>
+
+  <dialog id="settings">
+    <form method="dialog">
+      <h2>Settings</h2>
+      <label>Groq API key
+        <input id="key" type="password" autocomplete="off" placeholder="gsk_…">
+      </label>
+      <p class="hint">Get a free key at <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a>. It is stored only on this device.</p>
+      <label>Model
+        <input id="model" autocomplete="off">
+      </label>
+      <div class="row">
+        <button type="button" id="export">Export backup</button>
+        <button type="button" id="import">Import backup</button>
+        <input type="file" id="importFile" accept="application/json,.json" hidden>
+      </div>
+      <div class="row end">
+        <button type="button" id="cancel">Cancel</button>
+        <button value="save" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
