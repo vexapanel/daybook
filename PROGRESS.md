@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-11-06 — One-way cloud copy to Supabase
+- **What:** `supabase.sql` (tables `devices`, `items`, readable view `entries`, row level security, no DELETE grant). `app.js` signs each phone in anonymously and pushes every change after `save()` (also on launch and when back online); only changed items are sent, found by comparing hashes stored in `daybook.synced`. Phone deletes become `deleted = true`, never removed. First launch shows a one-time backup notice (no name asked, at the user's request); Settings shows the last backup time. Phone model is read from `navigator.userAgentData` (Android Chrome), falling back to the user-agent.
+- **Why:** User wants data never to be lost and to see who uses the app (phone model) and their notes + income/expense, without touching the data on the phone.
+- **State:** Verified end-to-end against the real Supabase project in headless Chrome: a note + tx upload to `items`; editing the note updates the server row; deleting the tx sets `deleted = true` and keeps the row; the device model lands in `devices`. Selftest (incl. `changes()` diff) passes; a failed cloud copy changes nothing locally and retries on the next change/launch/online.
+
 ## 2026-11-03 — Turkish UI, auto-stop, "Cihan Not Ajanı" theme
 - **What:** App renamed to "Cihan Not Ajanı" (repo/URL stay `daybook`; storage keys unchanged so existing data is kept). UI text is Turkish at the user's explicit request (overrides the English-UI default). Black/yellow/white theme in all system themes; new icons. Recording now stops by itself after 3.5 s of silence (adjustable in Settings), or after 10 s with no speech at all (discarded, nothing sent). Voice detection is energy-based with an adaptive noise floor (`toggleMic` in `app.js`).
 - **Why:** User wants hands-free notes without tapping stop, but no cut-off during thinking pauses.

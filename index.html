@@ -71,6 +71,7 @@
   <dialog id="settings">
     <form method="dialog">
       <h2>Ayarlar</h2>
+      <p class="hint">Notların ve gelir/gider kayıtların sunucuya da yedeklenir. Son yedek: <span id="cloudAt"></span></p>
       <label>Groq API anahtarı
         <input id="key" type="password" autocomplete="off" placeholder="gsk_…">
       </label>
@@ -89,6 +90,16 @@
       <div class="row end">
         <button type="button" id="cancel">Vazgeç</button>
         <button value="save" class="primary">Kaydet</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="welcome">
+    <form method="dialog">
+      <h2>Hoş geldin</h2>
+      <p class="hint">Notların ve gelir/gider kayıtların kaybolmasın diye sunucuya da yedeklenir. Telefon modelin de kaydedilir.</p>
+      <div class="row end">
+        <button value="ok" class="primary">Tamam</button>
       </div>
     </form>
   </dialog>

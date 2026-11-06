@@ -1,6 +1,8 @@
 'use strict';
 
 const API = 'https://api.groq.com/openai/v1';
+const SB = 'https://hhwhnzdnqkiuzsedebhh.supabase.co';
+const SB_KEY = 'sb_publishable_gXjsUp7EMdsIZ9oqke8-Bg_LpRCjZDQ'; // public by design; row level security guards the data
 const STT_MODEL = 'whisper-large-v3-turbo';
 const DEFAULT_MODEL = 'openai/gpt-oss-120b';
 const LANG = 'tr'; // spoken language; fixing it improves Whisper accuracy over auto-detect
@@ -50,6 +52,7 @@ function save() {
   } catch (e) {
     status('Kaydedilemedi: ' + e.message, true);
   }
+  sync(); // runs even when the phone's storage is full, so the cloud copy still gets it
 }
 
 function iso(d) {
@@ -346,6 +349,100 @@ async function importBackup(file) {
   }
 }
 
+// ---------- cloud copy ----------
+// One-way: the phone pushes every change to Supabase and never reads anything back,
+// so the server can never change or remove what is on the phone.
+
+let syncing = false;
+let syncAgain = false;
+let deviceSent = false;
+
+async function supa(path, body, token, method = 'POST') {
+  const headers = { apikey: SB_KEY, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' };
+  if (token) headers.Authorization = 'Bearer ' + token;
+  const res = await fetch(SB + path, { method, headers, body: JSON.stringify(body) });
+  const text = await res.text();
+  if (!res.ok) throw Object.assign(new Error(`Supabase ${res.status}: ${text}`), { status: res.status });
+  return text ? JSON.parse(text) : null;
+}
+
+async function session() {
+  let s = JSON.parse(localStorage.getItem('daybook.sb') || 'null');
+  if (s && s.expires_at * 1000 > Date.now() + 60000) return s;
+  try {
+    s = await supa(s ? '/auth/v1/token?grant_type=refresh_token' : '/auth/v1/signup', s ? { refresh_token: s.refresh_token } : {});
+  } catch (e) {
+    if (!s || ![400, 401, 403].includes(e.status)) throw e;
+    // Refresh token revoked: continue as a new anonymous user and upload everything again under it.
+    s = await supa('/auth/v1/signup', {});
+    localStorage.removeItem('daybook.synced');
+    deviceSent = false;
+  }
+  s = { access_token: s.access_token, refresh_token: s.refresh_token, expires_at: s.expires_at, user_id: s.user.id };
+  localStorage.setItem('daybook.sb', JSON.stringify(s));
+  return s;
+}
+
+function hash(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h, 33) ^ s.charCodeAt(i);
+  return h;
+}
+
+// Items that differ from what the server last confirmed, and ids deleted on the phone since then.
+// Only hashes are kept for the comparison so the phone's storage isn't doubled.
+function changes(data, synced) {
+  const seen = {};
+  const rows = [];
+  for (const kind of ['notes', 'tx']) {
+    for (const x of data[kind]) {
+      seen[x.id] = hash(JSON.stringify(x));
+      if (synced[x.id] !== seen[x.id]) rows.push({ kind, x });
+    }
+  }
+  return { rows, gone: Object.keys(synced).filter(id => !(id in seen)), seen };
+}
+
+async function deviceName() {
+  try {
+    const h = await navigator.userAgentData?.getHighEntropyValues(['model', 'platformVersion']);
+    if (h?.model) return `${h.model} · ${h.platform} ${h.platformVersion}`;
+  } catch {}
+  return navigator.userAgent.match(/\(([^)]*)\)/)?.[1] || navigator.userAgent;
+}
+
+async function sync() {
+  if (syncing) return void (syncAgain = true);
+  syncing = true;
+  try {
+    const s = await session();
+    const now = new Date().toISOString();
+    if (!deviceSent) {
+      await supa('/rest/v1/devices', { user_id: s.user_id, device: await deviceName(), updated_at: now }, s.access_token);
+      deviceSent = true;
+    }
+    const { rows, gone, seen } = changes(db, JSON.parse(localStorage.getItem('daybook.synced') || '{}'));
+    for (let i = 0; i < rows.length; i += 500) {
+      const batch = rows.slice(i, i + 500).map(({ kind, x }) => ({ user_id: s.user_id, id: x.id, kind, data: x, deleted: false, updated_at: now }));
+      await supa('/rest/v1/items', batch, s.access_token);
+    }
+    if (gone.length) {
+      const ids = encodeURIComponent(`(${gone.map(id => `"${id}"`).join(',')})`);
+      await supa('/rest/v1/items?id=in.' + ids, { deleted: true, updated_at: now }, s.access_token, 'PATCH');
+    }
+    localStorage.setItem('daybook.synced', JSON.stringify(seen));
+    localStorage.setItem('daybook.syncedAt', now);
+  } catch (e) {
+    console.warn('Cloud copy failed, retrying on the next change or launch:', e);
+  } finally {
+    syncing = false;
+    if (syncAgain) {
+      syncAgain = false;
+      sync();
+    }
+  }
+}
+
 // ---------- wiring ----------
 
 function shiftDay(n) {
@@ -373,6 +470,8 @@ $('#retry').onclick = () => pendingAudio && submitAudio(pendingAudio);
 
 const dlg = $('#settings');
 $('#openSettings').onclick = () => {
+  const at = localStorage.getItem('daybook.syncedAt');
+  $('#cloudAt').textContent = at ? new Date(at).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' }) : 'henüz yok';
   $('#key').value = localStorage.getItem('daybook.key') || '';
   $('#model').value = localStorage.getItem('daybook.model') || '';
   $('#model').placeholder = DEFAULT_MODEL;
@@ -390,6 +489,11 @@ dlg.onclose = () => {
   }
   status('Ayarlar kaydedildi.');
 };
+
+$('#welcome').onclose = () => {
+  localStorage.setItem('daybook.welcomed', '1');
+  sync();
+};
 $('#export').onclick = exportBackup;
 $('#import').onclick = () => $('#importFile').click();
 $('#importFile').onchange = e => { if (e.target.files[0]) importBackup(e.target.files[0]); e.target.value = ''; };
@@ -405,6 +509,9 @@ if (linkKey) {
 navigator.storage?.persist?.();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 render();
+if (!localStorage.getItem('daybook.welcomed')) $('#welcome').showModal();
+else sync();
+addEventListener('online', sync);
 if (!localStorage.getItem('daybook.key')) status('Önce Ayarlar\'dan (dişli simgesi) Groq API anahtarını ekle.');
 else if (linkKey) status('Groq anahtarı kaydedildi. Şimdi bu sayfayı ana ekrana ekle.');
 
@@ -421,5 +528,13 @@ if (location.hash === '#selftest') {
   const t = totals(items);
   console.assert(t.in === 2000 && t.out === 250.56, 'totals');
   console.assert(iso(new Date(2026, 0, 31, 23, 59)) === '2026-01-31', 'iso uses local date');
+  const data = { notes: [{ id: 'a', text: 'x' }], tx: [{ id: 'b', amount: 1 }] };
+  const first = changes(data, {});
+  console.assert(first.rows.length === 2 && !first.gone.length, 'first sync uploads everything');
+  data.notes[0].text = 'y';
+  data.tx = [];
+  const next = changes(data, first.seen);
+  console.assert(next.rows.length === 1 && next.rows[0].x.id === 'a' && next.gone.join() === 'b', 'edit re-sent, delete marked');
+  console.assert(!changes(data, next.seen).rows.length && !changes(data, next.seen).gone.length, 'no change, nothing sent');
   console.log('selftest done');
 }
