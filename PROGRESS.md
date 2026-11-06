@@ -1,5 +1,15 @@
 # Progress
 
+## 2026-11-06 — Admin panel (date-grouped view)
+- **What:** `admin.html`, a standalone page that reads all users' rows and shows them date by date (newest first): per-day income/expense totals, money and notes split out, person/device labels, filter by person, toggle to show deleted rows. Signs in with an admin email+password via the browser-safe publishable key; `admin-policies.sql` adds an RLS SELECT-all policy keyed to the admin email, so only that account sees everything (it can't write/delete). Session is stored and refreshed; no secret key in the browser (the new `sb_secret_*` keys are blocked in browsers anyway).
+- **Why:** The Supabase table grid was hard to read; user wanted a clean day-by-day view. First tried the service_role key but Supabase forbids secret keys in the browser.
+- **State:** Rendering/grouping/totals/filter/deleted-toggle and the login error path verified in headless Chrome. Publishable key accepted by the password-grant endpoint. CORS is `*`, so it works as a local `file://`. The admin-sees-all path is not yet verified end-to-end: needs the admin user created (dashboard) and `admin-policies.sql` run.
+
+## 2026-11-06 — Remove welcome dialog and enable shared Groq key
+- **What:** Removed `<dialog id="welcome">` from `index.html` and its event/modal handlers in `app.js`. Removed the startup status prompt and error message "Önce Ayarlar'dan (dişli simgesi) Groq API anahtarını ekle.". Added fallback to a central `GROQ_KEY` in `app.js` so a single shared API key can serve all users without requiring individual key entry.
+- **Why:** User requested removal of the welcome notice and API key prompt, and requested that the app use a central key for all users instead of asking each user for their own key.
+- **State:** Verified syntax with Node.js, verified cleanly loaded in Chrome headless.
+
 ## 2026-11-06 — One-way cloud copy to Supabase
 - **What:** `supabase.sql` (tables `devices`, `items`, readable view `entries`, row level security, no DELETE grant). `app.js` signs each phone in anonymously and pushes every change after `save()` (also on launch and when back online); only changed items are sent, found by comparing hashes stored in `daybook.synced`. Phone deletes become `deleted = true`, never removed. First launch shows a one-time backup notice (no name asked, at the user's request); Settings shows the last backup time. Phone model is read from `navigator.userAgentData` (Android Chrome), falling back to the user-agent.
 - **Why:** User wants data never to be lost and to see who uses the app (phone model) and their notes + income/expense, without touching the data on the phone.

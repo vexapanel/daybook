@@ -1,6 +1,7 @@
 'use strict';
 
 const API = 'https://api.groq.com/openai/v1';
+const GROQ_KEY = ''; // Shared key can't live in a public repo (GitHub blocks it, Groq auto-revokes it); use the proxy instead — see groq-proxy/
 const SB = 'https://hhwhnzdnqkiuzsedebhh.supabase.co';
 const SB_KEY = 'sb_publishable_gXjsUp7EMdsIZ9oqke8-Bg_LpRCjZDQ'; // public by design; row level security guards the data
 const STT_MODEL = 'whisper-large-v3-turbo';
@@ -153,8 +154,8 @@ function remove(kind, id) {
 // ---------- Groq ----------
 
 async function groq(path, body, json) {
-  const key = localStorage.getItem('daybook.key');
-  if (!key) throw new Error('Önce Ayarlar\'dan (dişli simgesi) Groq API anahtarını ekle.');
+  const key = localStorage.getItem('daybook.key') || GROQ_KEY;
+  if (!key) throw new Error('Groq API anahtarı bulunamadı.');
   const headers = { Authorization: 'Bearer ' + key };
   if (json) headers['Content-Type'] = 'application/json';
   let res;
@@ -490,10 +491,6 @@ dlg.onclose = () => {
   status('Ayarlar kaydedildi.');
 };
 
-$('#welcome').onclose = () => {
-  localStorage.setItem('daybook.welcomed', '1');
-  sync();
-};
 $('#export').onclick = exportBackup;
 $('#import').onclick = () => $('#importFile').click();
 $('#importFile').onchange = e => { if (e.target.files[0]) importBackup(e.target.files[0]); e.target.value = ''; };
@@ -509,11 +506,9 @@ if (linkKey) {
 navigator.storage?.persist?.();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 render();
-if (!localStorage.getItem('daybook.welcomed')) $('#welcome').showModal();
-else sync();
+sync();
 addEventListener('online', sync);
-if (!localStorage.getItem('daybook.key')) status('Önce Ayarlar\'dan (dişli simgesi) Groq API anahtarını ekle.');
-else if (linkKey) status('Groq anahtarı kaydedildi. Şimdi bu sayfayı ana ekrana ekle.');
+if (linkKey) status('Groq anahtarı kaydedildi. Şimdi bu sayfayı ana ekrana ekle.');
 
 if (location.hash === '#selftest') {
   const items = normalizeItems([

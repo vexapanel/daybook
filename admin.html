@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cihan Not — Yönetim</title>
+<style>
+  :root {
+    --bg: #0a0a0a; --panel: #151515; --card: #1c1c1c; --line: #2a2a2a;
+    --text: #f2f2f2; --muted: #8a8a8a; --accent: #ffd400;
+    --in: #3ddc84; --out: #ff5d5d;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; background: var(--panel);
+    border-bottom: 1px solid var(--line); padding: 14px 18px;
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; margin-right: auto; }
+  header h1 b { color: var(--accent); }
+  select, input, button { font: inherit; color: var(--text); background: var(--card);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
+  label.chk { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 14px; }
+  main { max-width: 820px; margin: 0 auto; padding: 18px; }
+  .summary { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  .day { margin-bottom: 26px; }
+  .day > h2 { font-size: 16px; margin: 0 0 4px; color: var(--accent);
+    text-transform: capitalize; position: sticky; top: 58px; background: var(--bg); padding: 6px 0; }
+  .day .totals { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
+  .grp-title { font-size: 12px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--muted); margin: 12px 0 6px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 8px; }
+  .card.gone { opacity: .45; }
+  .card .top { display: flex; gap: 10px; align-items: baseline; }
+  .card time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .card .who { color: var(--muted); font-size: 12px; margin-left: auto; }
+  .card .text { margin: 4px 0 0; white-space: pre-wrap; }
+  .tx { display: flex; align-items: center; gap: 10px; }
+  .tx .amt { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tx.in .amt { color: var(--in); } .tx.out .amt { color: var(--out); }
+  .tag-gone { color: var(--out); font-size: 11px; border: 1px solid var(--out);
+    border-radius: 999px; padding: 0 6px; }
+  .empty { color: var(--muted); }
+  .setup { max-width: 460px; margin: 60px auto; padding: 24px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 14px; }
+  .setup h1 { margin-top: 0; } .setup p { color: var(--muted); font-size: 14px; }
+  .setup input { width: 100%; margin: 10px 0; }
+  .err { color: var(--out); }
+</style>
+</head>
+<body>
+<div id="setup" class="setup" hidden>
+  <h1>Yönetim paneli</h1>
+  <p>Admin hesabınla giriş yap. (Supabase'de oluşturduğun admin e-postası ve şifresi;
+     kurulum için <i>admin-policies.sql</i>'e bak.)</p>
+  <input id="email" type="email" placeholder="E-posta" autocomplete="username">
+  <input id="pw" type="password" placeholder="Şifre" autocomplete="current-password">
+  <button class="primary" id="login">Giriş yap</button>
+  <p id="setupErr" class="err"></p>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <h1>Cihan <b>Not</b> · Yönetim</h1>
+    <select id="userFilter"><option value="">Herkes</option></select>
+    <label class="chk"><input type="checkbox" id="showDeleted"> Silinenleri göster</label>
+    <button id="refresh">Yenile</button>
+    <button id="logout">Anahtarı sil</button>
+  </header>
+  <main>
+    <p class="summary" id="summary"></p>
+    <div id="days"></div>
+  </main>
+</div>
+
+<script>
+const SB = 'https://hhwhnzdnqkiuzsedebhh.supabase.co';
+const PUB = 'sb_publishable_gXjsUp7EMdsIZ9oqke8-Bg_LpRCjZDQ'; // browser-safe; the admin RLS policy gates the data
+const money = new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' });
+const $ = s => document.querySelector(s);
+let ITEMS = [], DEVICES = {};
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function saveSession(j) {
+  localStorage.setItem('daybook.admin.sess', JSON.stringify({ access_token: j.access_token, refresh_token: j.refresh_token, expires_at: j.expires_at }));
+}
+
+// A valid access token, refreshed if it has expired. Throws if the admin must sign in again.
+async function token() {
+  const s = JSON.parse(localStorage.getItem('daybook.admin.sess') || 'null');
+  if (!s) throw Object.assign(new Error('Giriş gerekli.'), { signin: true });
+  if (s.expires_at * 1000 > Date.now() + 60000) return s.access_token;
+  const res = await fetch(SB + '/auth/v1/token?grant_type=refresh_token', {
+    method: 'POST', headers: { apikey: PUB, 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: s.refresh_token }),
+  });
+  if (!res.ok) { localStorage.removeItem('daybook.admin.sess'); throw Object.assign(new Error('Oturum süresi doldu, tekrar giriş yap.'), { signin: true }); }
+  const j = await res.json();
+  saveSession(j);
+  return j.access_token;
+}
+
+async function fetchAll() {
+  const tok = await token();
+  const get = async q => {
+    const res = await fetch(SB + '/rest/v1/' + q, { headers: { apikey: PUB, Authorization: 'Bearer ' + tok } });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    return res.json();
+  };
+  const [items, devices] = await Promise.all([
+    get('items?select=user_id,kind,data,deleted,updated_at&order=updated_at.desc'),
+    get('devices?select=user_id,device,updated_at'),
+  ]);
+  DEVICES = {};
+  for (const d of devices) DEVICES[d.user_id] = d.device;
+  ITEMS = items;
+}
+
+function who(userId) {
+  return DEVICES[userId] || ('Bilinmiyor · ' + userId.slice(0, 8));
+}
+
+// Group visible items by date (newest first); within a date, notes and money separately.
+function render() {
+  const onlyUser = $('#userFilter').value;
+  const showDeleted = $('#showDeleted').checked;
+  const rows = ITEMS.filter(i => (showDeleted || !i.deleted) && (!onlyUser || i.user_id === onlyUser));
+
+  const byDate = {};
+  for (const i of rows) (byDate[i.data.date || '—'] ??= []).push(i);
+  const dates = Object.keys(byDate).sort().reverse();
+
+  const people = new Set(rows.map(i => i.user_id)).size;
+  const noteCount = rows.filter(i => i.kind === 'notes').length;
+  const txCount = rows.filter(i => i.kind === 'tx').length;
+  $('#summary').textContent = `${people} kişi · ${noteCount} not · ${txCount} gelir/gider kaydı · ${dates.length} gün`;
+
+  const days = $('#days');
+  days.replaceChildren();
+  if (!dates.length) { days.append(el('p', 'empty', 'Kayıt yok.')); return; }
+
+  for (const date of dates) {
+    const list = byDate[date].slice().sort((a, b) => (a.data.time || '').localeCompare(b.data.time || ''));
+    const section = el('section', 'day');
+    section.append(el('h2', '', dateLabel(date)));
+
+    const txs = list.filter(i => i.kind === 'tx');
+    const notes = list.filter(i => i.kind === 'notes');
+
+    if (txs.length) {
+      let tin = 0, tout = 0;
+      for (const i of txs) if (!i.deleted) (i.data.type === 'in' ? (tin += +i.data.amount || 0) : (tout += +i.data.amount || 0));
+      section.append(el('p', 'totals', `Gelen ${money.format(tin)} · Giden ${money.format(tout)} · Kalan ${money.format(tin - tout)}`));
+      section.append(el('div', 'grp-title', 'Gelir / Gider'));
+      for (const i of txs) section.append(txCard(i));
+    }
+    if (notes.length) {
+      section.append(el('div', 'grp-title', 'Günlük notlar'));
+      for (const i of notes) section.append(noteCard(i));
+    }
+    days.append(section);
+  }
+}
+
+function dateLabel(date) {
+  if (date === '—') return 'Tarihsiz';
+  return new Date(date + 'T12:00').toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function noteCard(i) {
+  const c = el('div', 'card' + (i.deleted ? ' gone' : ''));
+  const top = el('div', 'top');
+  top.append(el('time', '', i.data.time || ''));
+  if (i.deleted) top.append(el('span', 'tag-gone', 'silinmiş'));
+  top.append(el('span', 'who', who(i.user_id)));
+  c.append(top, el('p', 'text', i.data.text || i.data.raw || ''));
+  return c;
+}
+
+function txCard(i) {
+  const type = i.data.type === 'in' ? 'in' : 'out';
+  const c = el('div', 'card tx ' + type + (i.deleted ? ' gone' : ''));
+  c.append(el('time', '', i.data.time || ''));
+  c.append(el('span', 'text', i.data.desc || '—'));
+  if (i.deleted) c.append(el('span', 'tag-gone', 'silinmiş'));
+  c.append(el('span', 'who', who(i.user_id)));
+  c.append(el('span', 'amt', (type === 'in' ? '+' : '−') + money.format(+i.data.amount || 0)));
+  return c;
+}
+
+function fillUsers() {
+  const sel = $('#userFilter');
+  const ids = [...new Set(ITEMS.map(i => i.user_id))];
+  sel.replaceChildren(el('option', '', 'Herkes'));
+  sel.firstChild.value = '';
+  for (const id of ids) {
+    const o = el('option', '', who(id));
+    o.value = id;
+    sel.append(o);
+  }
+}
+
+function showLogin(msg) {
+  $('#app').hidden = true;
+  $('#setup').hidden = false;
+  $('#setupErr').textContent = msg || '';
+}
+
+async function load() {
+  $('#summary').textContent = 'Yükleniyor…';
+  try {
+    await fetchAll();
+    fillUsers();
+    render();
+  } catch (e) {
+    if (e.signin) return showLogin(e.message);
+    $('#summary').innerHTML = '<span class="err">Yüklenemedi: ' + e.message + '</span>';
+  }
+}
+
+function showApp() {
+  $('#setup').hidden = true;
+  $('#app').hidden = false;
+  load();
+}
+
+$('#login').onclick = async () => {
+  const email = $('#email').value.trim(), password = $('#pw').value;
+  if (!email || !password) return;
+  $('#setupErr').textContent = 'Giriş yapılıyor…';
+  try {
+    const res = await fetch(SB + '/auth/v1/token?grant_type=password', {
+      method: 'POST', headers: { apikey: PUB, 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }),
+    });
+    const j = await res.json();
+    if (!res.ok) throw new Error(j.error_description || j.msg || res.status);
+    saveSession(j);
+    $('#pw').value = '';
+    showApp();
+  } catch (e) {
+    $('#setupErr').textContent = 'Giriş başarısız: ' + e.message;
+  }
+};
+$('#pw').onkeydown = e => { if (e.key === 'Enter') $('#login').click(); };
+$('#refresh').onclick = load;
+$('#userFilter').onchange = render;
+$('#showDeleted').onchange = render;
+$('#logout').onclick = () => { localStorage.removeItem('daybook.admin.sess'); location.reload(); };
+
+if (localStorage.getItem('daybook.admin.sess')) showApp();
+else $('#setup').hidden = false;
+</script>
+</body>
+</html>
