@@ -16,8 +16,9 @@ const cors = {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
-  // Everything after .../functions/v1/groq is the Groq path, e.g. /chat/completions.
-  const path = new URL(req.url).pathname.replace(/^\/functions\/v1\/groq/, '') || '/chat/completions';
+  // Everything after the function name is the Groq path, e.g. /chat/completions.
+  // The gateway may hand us /groq/... or /functions/v1/groq/..., so strip up to the first /groq.
+  const path = new URL(req.url).pathname.replace(/^.*?\/groq/, '') || '/chat/completions';
   const ct = req.headers.get('content-type') || '';
 
   const res = await fetch(GROQ + path, {
