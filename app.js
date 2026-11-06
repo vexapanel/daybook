@@ -1,7 +1,6 @@
 'use strict';
 
 const API = 'https://api.groq.com/openai/v1';
-const GROQ_KEY = ''; // Shared key can't live in a public repo (GitHub blocks it, Groq auto-revokes it); use the proxy instead — see groq-proxy/
 const SB = 'https://hhwhnzdnqkiuzsedebhh.supabase.co';
 const SB_KEY = 'sb_publishable_gXjsUp7EMdsIZ9oqke8-Bg_LpRCjZDQ'; // public by design; row level security guards the data
 const STT_MODEL = 'whisper-large-v3-turbo';
@@ -154,13 +153,21 @@ function remove(kind, id) {
 // ---------- Groq ----------
 
 async function groq(path, body, json) {
-  const key = localStorage.getItem('daybook.key') || GROQ_KEY;
-  if (!key) throw new Error('Groq API anahtarı bulunamadı.');
-  const headers = { Authorization: 'Bearer ' + key };
+  // Own key -> call Groq directly. No key -> go through the Supabase proxy, which holds the shared key.
+  const key = localStorage.getItem('daybook.key');
+  let url, headers;
+  if (key) {
+    url = API + path;
+    headers = { Authorization: 'Bearer ' + key };
+  } else {
+    const s = await session();
+    url = SB + '/functions/v1/groq' + path;
+    headers = { Authorization: 'Bearer ' + s.access_token, apikey: SB_KEY };
+  }
   if (json) headers['Content-Type'] = 'application/json';
   let res;
   try {
-    res = await fetch(API + path, { method: 'POST', headers, body: json ? JSON.stringify(body) : body });
+    res = await fetch(url, { method: 'POST', headers, body: json ? JSON.stringify(body) : body });
   } catch {
     throw new Error('İnternete bağlanılamadı.');
   }
