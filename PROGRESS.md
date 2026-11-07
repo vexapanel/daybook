@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-11-07 — Trim Settings dialog
+- **What:** Removed the backup-status line, the Groq API key field + its hint, and the Model field from Settings (`index.html`, handlers in `app.js`). Settings now has only the silence timeout and backup export/import.
+- **Why:** User request; the shared Groq proxy makes per-user keys unnecessary.
+- **State:** Verified in headless Chrome: dialog opens with only those controls, saving the silence value works, no JS errors. A key/model already stored on a device is still used (no UI to clear it now); the `#key=` setup link still works.
+
 ## 2026-11-06 — Shared Groq key via Supabase Edge Function proxy
 - **What:** `supabase/functions/groq/index.ts` forwards `/chat/completions` and `/audio/transcriptions` to Groq with a `GROQ_KEY` secret kept in Supabase (never in the repo/browser), with CORS + OPTIONS handling. `app.js`: `groq()` uses the user's own key if set, otherwise calls the proxy with the phone's anonymous Supabase session. Removed the `GROQ_KEY` source constant — GitHub push protection blocked it and Groq auto-revokes public keys.
 - **Why:** Users who install the app shouldn't need their own Groq key, but a public static site can't hold a shared key safely.

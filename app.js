@@ -478,11 +478,6 @@ $('#retry').onclick = () => pendingAudio && submitAudio(pendingAudio);
 
 const dlg = $('#settings');
 $('#openSettings').onclick = () => {
-  const at = localStorage.getItem('daybook.syncedAt');
-  $('#cloudAt').textContent = at ? new Date(at).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' }) : 'henüz yok';
-  $('#key').value = localStorage.getItem('daybook.key') || '';
-  $('#model').value = localStorage.getItem('daybook.model') || '';
-  $('#model').placeholder = DEFAULT_MODEL;
   $('#silence').value = localStorage.getItem('daybook.silence') || '';
   $('#silence').placeholder = DEFAULT_SILENCE_S;
   dlg.showModal();
@@ -491,10 +486,8 @@ $('#cancel').onclick = () => dlg.close();
 dlg.onclose = () => {
   if (dlg.returnValue !== 'save') return;
   dlg.returnValue = '';
-  for (const k of ['key', 'model', 'silence']) {
-    const v = $('#' + k).value.trim();
-    v ? localStorage.setItem('daybook.' + k, v) : localStorage.removeItem('daybook.' + k);
-  }
+  const v = $('#silence').value.trim();
+  v ? localStorage.setItem('daybook.silence', v) : localStorage.removeItem('daybook.silence');
   status('Ayarlar kaydedildi.');
 };
 

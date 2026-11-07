@@ -71,16 +71,8 @@
   <dialog id="settings">
     <form method="dialog">
       <h2>Ayarlar</h2>
-      <p class="hint">Notların ve gelir/gider kayıtların sunucuya da yedeklenir. Son yedek: <span id="cloudAt"></span></p>
-      <label>Groq API anahtarı
-        <input id="key" type="password" autocomplete="off" placeholder="gsk_…">
-      </label>
-      <p class="hint">Ücretsiz anahtar: <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a>. Sadece bu cihazda saklanır.</p>
       <label>Sustuktan kaç saniye sonra kayıt dursun
         <input id="silence" type="number" inputmode="decimal" min="1" max="15" step="0.5">
-      </label>
-      <label>Model
-        <input id="model" autocomplete="off">
       </label>
       <div class="row">
         <button type="button" id="export">Yedeği indir</button>
